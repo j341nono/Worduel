@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: worduel-server
+    runtime: node
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @worduel/server... run build
+    startCommand: pnpm --filter @worduel/server run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ENABLE_PERSISTENCE
+        value: "false"
+      - key: CORS_ORIGIN
+        sync: false

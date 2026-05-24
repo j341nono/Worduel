@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build",
+    "build": "pnpm --filter @worduel/shared run build && pnpm --filter @worduel/word-dictionary run build && pnpm --filter @worduel/game-core run build && next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "lint": "next lint"

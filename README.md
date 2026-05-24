@@ -82,6 +82,22 @@ For internet testing, put both apps behind public HTTPS endpoints. The web app n
 `CORS_ORIGIN=https://<web-host>`. Socket.IO will use secure WebSockets through that
 same API host. Keep PostgreSQL and Redis private; only expose the web/API endpoints.
 
+Recommended free-host settings:
+
+```bash
+# Vercel web build command
+pnpm run build
+
+# Render server build command
+pnpm install --frozen-lockfile && pnpm --filter @worduel/server... run build
+
+# Render server start command
+pnpm --filter @worduel/server run start
+```
+
+Do not use `tsx src/index.ts` as the Render start command; the production server
+expects the workspace packages and server to be built first.
+
 ### Tests
 
 ```bash
