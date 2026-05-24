@@ -1,0 +1,26 @@
+{
+  "name": "worduel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worduel — 1v1 real-time 3-letter word battle game",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "db:push": "pnpm --filter @worduel/server exec prisma db push",
+    "db:generate": "pnpm --filter @worduel/server exec prisma generate",
+    "db:migrate": "pnpm --filter @worduel/server exec prisma migrate dev",
+    "clean": "pnpm -r exec rm -rf node_modules dist .next .turbo"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.7",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
