@@ -95,8 +95,8 @@ pnpm install --frozen-lockfile && pnpm --filter @worduel/server... run build
 pnpm --filter @worduel/server run start
 ```
 
-Do not use `tsx src/index.ts` as the Render start command; the production server
-expects the workspace packages and server to be built first.
+The server start script uses `tsx src/index.ts` so Render can run against the
+workspace TypeScript packages that are also consumed by the Vercel build.
 
 ### Tests
 
