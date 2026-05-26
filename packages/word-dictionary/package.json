@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build:words": "node scripts/build-words.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"

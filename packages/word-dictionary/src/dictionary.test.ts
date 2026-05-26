@@ -9,8 +9,8 @@ import {
 } from "./index.js";
 
 describe("word dictionary", () => {
-  it("contains at least 100 words", () => {
-    expect(dictionarySize()).toBeGreaterThanOrEqual(100);
+  it("contains at least 1000 words", () => {
+    expect(dictionarySize()).toBeGreaterThanOrEqual(1000);
   });
 
   it("contains only 3-letter lowercase alpha words and no duplicates", () => {
