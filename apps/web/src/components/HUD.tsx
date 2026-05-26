@@ -1,6 +1,5 @@
 "use client";
-import { MAX_STORED_TOKENS } from "@worduel/shared";
-import type { MatchState, PlayerState } from "@worduel/shared";
+import type { MatchState, PlayerId, PlayerState, Puzzle } from "@worduel/shared";
 import clsx from "clsx";
 import { useT } from "@/lib/i18n";
 
@@ -30,7 +29,13 @@ export function HUD({
 
   return (
     <div className="grid grid-cols-3 items-center gap-3">
-      <PlayerCard player={me} label={t("hud.you")} align="left" />
+      <PlayerCard
+        player={me}
+        label={t("hud.you")}
+        align="left"
+        solved={countSolved(state, me?.id)}
+        total={countTotal(state, me?.id)}
+      />
       <div className="text-center">
         <div className="text-xs uppercase tracking-widest text-ink-200">{t("hud.time")}</div>
         <div className="font-mono text-4xl font-bold tabular-nums">
@@ -38,7 +43,13 @@ export function HUD({
         </div>
         <div className="mt-1 text-xs text-ink-200">{phaseLabel}</div>
       </div>
-      <PlayerCard player={opp} label={t("hud.opponent")} align="right" />
+      <PlayerCard
+        player={opp}
+        label={t("hud.opponent")}
+        align="right"
+        solved={countSolved(state, opp?.id)}
+        total={countTotal(state, opp?.id)}
+      />
     </div>
   );
 }
@@ -47,10 +58,14 @@ function PlayerCard({
   player,
   label,
   align,
+  solved,
+  total,
 }: {
   player?: PlayerState;
   label: string;
   align: "left" | "right";
+  solved: number;
+  total: number;
 }) {
   const t = useT();
   if (!player) {
@@ -77,23 +92,38 @@ function PlayerCard({
         <span className="font-mono text-3xl font-bold tabular-nums">{player.score}</span>
         <span className="text-xs text-ink-200">{t("hud.pts")}</span>
       </div>
-      <Tokens count={player.tokens} align={align} />
+      <SolvedMeter solved={solved} total={total} align={align} />
     </div>
   );
 }
 
-function Tokens({ count, align }: { count: number; align: "left" | "right" }) {
+function SolvedMeter({
+  solved,
+  total,
+  align,
+}: {
+  solved: number;
+  total: number;
+  align: "left" | "right";
+}) {
+  const t = useT();
   return (
-    <div className={clsx("mt-3 flex gap-1", align === "right" && "justify-end")}>
-      {Array.from({ length: MAX_STORED_TOKENS }).map((_, i) => (
-        <div
-          key={i}
-          className={clsx(
-            "h-3 w-6 rounded-full border",
-            i < count ? "bg-accent-500 border-accent-500" : "border-ink-800 bg-ink-900",
-          )}
-        />
-      ))}
+    <div className={clsx("mt-3 text-xs text-ink-200", align === "right" && "text-right")}>
+      {t("hud.solved", { solved, total })}
     </div>
   );
+}
+
+function countSolved(state: MatchState, playerId: string | undefined): number {
+  if (!playerId) return 0;
+  return getPuzzles(state, playerId).filter((p) => p.status === "solved").length;
+}
+
+function countTotal(state: MatchState, playerId: string | undefined): number {
+  if (!playerId) return 0;
+  return getPuzzles(state, playerId).length;
+}
+
+function getPuzzles(state: MatchState, playerId: string): Puzzle[] {
+  return state.incoming[playerId as PlayerId] ?? [];
 }

@@ -4,7 +4,6 @@ import { useSearchParams } from "next/navigation";
 import { useOnlineStore } from "@/store/onlineStore";
 import { HUD } from "@/components/HUD";
 import { PuzzleBoard } from "@/components/PuzzleBoard";
-import { SendPanel } from "@/components/SendPanel";
 import { ResolvedFeed } from "@/components/ResolvedFeed";
 import { EndScreen } from "@/components/EndScreen";
 import { ToastStack } from "@/components/Toast";
@@ -34,6 +33,11 @@ function OnlinePageInner() {
   useEffect(() => {
     store.init();
   }, [store]);
+
+  useEffect(() => {
+    setToasts([]);
+    setFlash(null);
+  }, [store.roomCode, store.state?.matchId, store.state?.phase]);
 
   useEffect(() => {
     if (!store.toast) return;
@@ -74,7 +78,16 @@ function OnlinePageInner() {
           summary={store.summary}
           meId={me.id}
           state={state}
-          onPlayAgain={() => store.reset()}
+          onPlayAgain={() => {
+            setToasts([]);
+            setFlash(null);
+            store.startMatch().catch((e: Error) =>
+              setToasts((arr) => [
+                ...arr,
+                { id: `err-${Date.now()}`, text: e.message, tone: "bad" },
+              ]),
+            );
+          }}
         />
       ) : (
         <div className="space-y-4">
@@ -82,19 +95,6 @@ function OnlinePageInner() {
             puzzles={incomingForMe}
             onSubmitGuess={(g) => {
               store.submitGuess(g).catch((e: Error) =>
-                setToasts((arr) => [
-                  ...arr,
-                  { id: `err-${Date.now()}`, text: e.message, tone: "bad" },
-                ]),
-              );
-            }}
-            disabled={state.phase !== "running"}
-          />
-          <SendPanel
-            me={me}
-            fetchCandidates={() => store.fetchCandidates()}
-            onSend={(cid) => {
-              store.sendQuestion(cid).catch((e: Error) =>
                 setToasts((arr) => [
                   ...arr,
                   { id: `err-${Date.now()}`, text: e.message, tone: "bad" },

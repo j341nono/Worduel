@@ -40,20 +40,22 @@ function buildNote(
   t: ReturnType<typeof useT>,
 ): NotifyEvent | null {
   const word = (p.answer ?? "???").toUpperCase();
+  const isShared = p.fromPlayerId === p.toPlayerId;
   const iSent = p.fromPlayerId === meId;
   const iSolved = p.toPlayerId === meId && p.status === "solved";
 
-  if (iSent && p.status === "solved") {
-    return { id: p.id, tone: "bad", text: t("notify.oppSolvedYours", { word }), big: true };
-  }
-  if (iSent && (p.status === "failed" || p.status === "expired")) {
-    return { id: p.id, tone: "good", text: t("notify.oppFailedYours", { word }), big: true };
-  }
   if (iSolved) {
     return { id: p.id, tone: "good", text: t("notify.youSolved", { word }) };
   }
   if (p.toPlayerId === meId && (p.status === "failed" || p.status === "expired")) {
     return { id: p.id, tone: "bad", text: t("notify.youMissed", { word }) };
+  }
+  if (isShared) return null;
+  if (iSent && p.status === "solved") {
+    return { id: p.id, tone: "bad", text: t("notify.oppSolvedYours", { word }), big: true };
+  }
+  if (iSent && (p.status === "failed" || p.status === "expired")) {
+    return { id: p.id, tone: "good", text: t("notify.oppFailedYours", { word }), big: true };
   }
   return null;
 }

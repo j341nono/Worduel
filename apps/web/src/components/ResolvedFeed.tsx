@@ -20,17 +20,28 @@ export function ResolvedFeed({ state, meId }: { state: MatchState; meId: string 
 
 function ResolvedRow({ p, meId }: { p: Puzzle; meId: string | null }) {
   const t = useT();
+  const isShared = p.fromPlayerId === p.toPlayerId;
   const meSent = p.fromPlayerId === meId;
   const solved = p.status === "solved";
 
-  const sentLabel = meSent ? t("feed.youSent") : t("feed.oppSent");
-  const verbKey = meSent
+  const sentLabel = isShared
+    ? p.toPlayerId === meId
+      ? t("feed.yourPuzzle")
+      : t("feed.opponentPuzzle")
+    : meSent
+      ? t("feed.youSent")
+      : t("feed.oppSent");
+  const verbKey = isShared
     ? solved
-      ? "feed.solvedByThem"
-      : "feed.missedByThem"
-    : solved
-      ? "feed.solvedByYou"
-      : "feed.missedByYou";
+      ? "feed.sharedSolved"
+      : "feed.sharedMissed"
+    : meSent
+      ? solved
+        ? "feed.solvedByThem"
+        : "feed.missedByThem"
+      : solved
+        ? "feed.solvedByYou"
+        : "feed.missedByYou";
   const status =
     p.status === "solved"
       ? t("feed.statusSolved")

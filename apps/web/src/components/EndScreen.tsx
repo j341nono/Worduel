@@ -148,7 +148,12 @@ function PuzzleAttempt({
   const t = useT();
   const isSolved = puzzle.status === "solved";
   const isMine = puzzle.toPlayerId === meId;
-  const sentBy = puzzle.fromPlayerId === meId ? t("feed.youSent") : t("feed.oppSent");
+  const sentBy =
+    puzzle.fromPlayerId === puzzle.toPlayerId
+      ? t("end.commonPuzzle")
+      : puzzle.fromPlayerId === meId
+        ? t("feed.youSent")
+        : t("feed.oppSent");
   const status =
     puzzle.status === "solved"
       ? t("feed.statusSolved")

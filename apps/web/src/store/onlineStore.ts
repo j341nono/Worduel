@@ -5,7 +5,6 @@ import type {
   MatchState,
   PlayerId,
   PuzzleId,
-  QuestionCandidate,
 } from "@worduel/shared";
 import { getSocket } from "@/lib/socket";
 
@@ -30,8 +29,6 @@ interface OnlineStore {
   ) => Promise<{ playerId: PlayerId; state: MatchState }>;
   leaveRoom: () => Promise<void>;
   startMatch: () => Promise<void>;
-  fetchCandidates: () => Promise<QuestionCandidate[]>;
-  sendQuestion: (candidateId: string) => Promise<PuzzleId>;
   submitGuess: (guess: string) => Promise<{ solvedPuzzleIds: PuzzleId[] }>;
 }
 
@@ -49,8 +46,21 @@ export const useOnlineStore = create<OnlineStore>((set, get) => ({
     const socket = getSocket();
     socket.on("connect", () => set({ connected: true }));
     socket.on("disconnect", () => set({ connected: false }));
-    socket.on("match_state_updated", (state) => set({ state }));
-    socket.on("match_finished", (summary) => set({ summary }));
+    socket.on("match_state_updated", (state) =>
+      set((current) => {
+        const isNewMatch = current.state?.matchId !== state.matchId;
+        return {
+          state,
+          summary: isNewMatch || state.phase === "running" ? null : current.summary,
+          toast: isNewMatch ? null : current.toast,
+        };
+      }),
+    );
+    socket.on("match_finished", (summary) =>
+      set((current) =>
+        !current.state || current.state.matchId === summary.matchId ? { summary } : {},
+      ),
+    );
     socket.on("player_disconnected", () =>
       set({ toast: { text: "Opponent disconnected", tone: "bad" } }),
     );
@@ -111,30 +121,11 @@ export const useOnlineStore = create<OnlineStore>((set, get) => ({
 
   startMatch() {
     const socket = getSocket();
+    set({ summary: null, toast: null });
     return new Promise((resolve, reject) => {
       socket.emit("start_match", (res) => {
         if (!res.ok) return reject(new Error(res.error));
         resolve();
-      });
-    });
-  },
-
-  fetchCandidates() {
-    const socket = getSocket();
-    return new Promise((resolve, reject) => {
-      socket.emit("get_question_candidates", (res) => {
-        if (!res.ok) return reject(new Error(res.error));
-        resolve(res.data.candidates);
-      });
-    });
-  },
-
-  sendQuestion(candidateId) {
-    const socket = getSocket();
-    return new Promise((resolve, reject) => {
-      socket.emit("send_question", { candidateId }, (res) => {
-        if (!res.ok) return reject(new Error(res.error));
-        resolve(res.data.puzzleId);
       });
     });
   },

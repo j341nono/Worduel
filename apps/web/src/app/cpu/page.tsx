@@ -4,7 +4,6 @@ import type { MatchResultSummary } from "@worduel/shared";
 import { useCpuStore, type CpuDifficulty } from "@/store/cpuStore";
 import { HUD } from "@/components/HUD";
 import { PuzzleBoard } from "@/components/PuzzleBoard";
-import { SendPanel } from "@/components/SendPanel";
 import { ResolvedFeed } from "@/components/ResolvedFeed";
 import { EndScreen } from "@/components/EndScreen";
 import { ToastStack } from "@/components/Toast";
@@ -56,8 +55,6 @@ export default function CpuPage() {
       store.matchId,
       store.startedAt,
       store.endsAt,
-      store.playerTokensSpent,
-      store.cpuTokensSpent,
     ],
   );
   const me = state.players[0] ?? null;
@@ -106,11 +103,6 @@ export default function CpuPage() {
           <PuzzleBoard
             puzzles={incomingForMe}
             onSubmitGuess={(g) => store.submitGuess(g)}
-          />
-          <SendPanel
-            me={localizedState.players[0]!}
-            fetchCandidates={async () => store.drawCandidates()}
-            onSend={(cid) => store.sendPuzzle(cid)}
           />
         </div>
       )}

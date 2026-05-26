@@ -1,9 +1,8 @@
 "use client";
 import { create } from "zustand";
 import {
-  CANDIDATE_COUNT,
   MATCH_DURATION_SEC,
-  MAX_STORED_TOKENS,
+  MAX_PUZZLE_SLOTS,
   WORD_LENGTH,
 } from "@worduel/shared";
 import type {
@@ -13,15 +12,12 @@ import type {
   PlayerId,
   Puzzle,
   PuzzleId,
-  QuestionCandidate,
 } from "@worduel/shared";
 import {
   computeFeedback,
-  computeTokenCount,
   cpuProfiles,
   isAllCorrect,
   pickCpuGuess,
-  scoreMatchEndExpire,
   scoreSolve,
 } from "@worduel/game-core";
 import { sampleWords } from "@worduel/word-dictionary";
@@ -43,20 +39,15 @@ interface CpuStore {
   cpuId: PlayerId;
   playerScore: number;
   cpuScore: number;
-  playerTokensSpent: number;
-  cpuTokensSpent: number;
   // Both queues KEEP solved puzzles in place (locked slots).
   playerIncoming: CpuPuzzle[];
   cpuIncoming: CpuPuzzle[];
   recentlyResolved: CpuPuzzle[];
-  candidates: QuestionCandidate[] | null;
   summary: MatchResultSummary | null;
 
   start: (difficulty: CpuDifficulty) => void;
   stop: () => void;
   tick: () => void;
-  drawCandidates: () => QuestionCandidate[];
-  sendPuzzle: (candidateId: string) => void;
   submitGuess: (guess: string) => { solvedPuzzleIds: PuzzleId[] };
   toMatchState: () => MatchState;
 }
@@ -76,16 +67,14 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
   cpuId: CPU_ID,
   playerScore: 0,
   cpuScore: 0,
-  playerTokensSpent: 0,
-  cpuTokensSpent: 0,
   playerIncoming: [],
   cpuIncoming: [],
   recentlyResolved: [],
-  candidates: null,
   summary: null,
 
   start(difficulty) {
     const now = Date.now();
+    const words = sampleWords(MAX_PUZZLE_SLOTS);
     set({
       matchId: MATCH_ID_FACTORY(),
       phase: "running",
@@ -94,12 +83,9 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
       endsAt: now + MATCH_DURATION_SEC * 1000,
       playerScore: 0,
       cpuScore: 0,
-      playerTokensSpent: 0,
-      cpuTokensSpent: 0,
-      playerIncoming: [],
-      cpuIncoming: [],
+      playerIncoming: createSharedPuzzles(PLAYER_ID, words, now),
+      cpuIncoming: createSharedPuzzles(CPU_ID, words, now),
       recentlyResolved: [],
-      candidates: null,
       summary: null,
     });
   },
@@ -112,13 +98,10 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
       endsAt: null,
       playerScore: 0,
       cpuScore: 0,
-      playerTokensSpent: 0,
-      cpuTokensSpent: 0,
       summary: null,
       playerIncoming: [],
       cpuIncoming: [],
       recentlyResolved: [],
-      candidates: null,
     });
   },
 
@@ -129,23 +112,17 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
 
     // 1) Match end: expire still-active puzzles, no fail bonus.
     if (now >= s.endsAt) {
-      let playerScore = s.playerScore;
-      let cpuScore = s.cpuScore;
       const newlyResolved: CpuPuzzle[] = [];
       for (const p of s.playerIncoming) {
         if (p.status !== "active") continue;
         p.status = "expired";
         p.resolvedAt = now;
-        const r = scoreMatchEndExpire({ elapsedMs: now - p.startedAt });
-        cpuScore += r.senderPoints;
         newlyResolved.push(p);
       }
       for (const p of s.cpuIncoming) {
         if (p.status !== "active") continue;
         p.status = "expired";
         p.resolvedAt = now;
-        const r = scoreMatchEndExpire({ elapsedMs: now - p.startedAt });
-        playerScore += r.senderPoints;
         newlyResolved.push(p);
       }
       const recentlyResolved = [...newlyResolved, ...s.recentlyResolved].slice(0, 8);
@@ -155,24 +132,23 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
         startedAt: s.startedAt,
         endedAt: now,
         players: [
-          { playerId: s.playerId, name: "You", score: playerScore },
-          { playerId: s.cpuId, name: `CPU (${s.difficulty})`, score: cpuScore, isCpu: true },
+          { playerId: s.playerId, name: "You", score: s.playerScore },
+          { playerId: s.cpuId, name: `CPU (${s.difficulty})`, score: s.cpuScore, isCpu: true },
         ],
         winnerPlayerId:
-          playerScore === cpuScore
+          s.playerScore === s.cpuScore
             ? null
-            : playerScore > cpuScore
+            : s.playerScore > s.cpuScore
               ? s.playerId
               : s.cpuId,
       };
-      set({ phase: "finished", playerScore, cpuScore, recentlyResolved, summary });
+      set({ phase: "finished", recentlyResolved, summary });
       return;
     }
 
     // 2) CPU advances on the oldest active puzzle in its queue.
     const profile = cpuProfiles[s.difficulty];
     let cpuIncoming = s.cpuIncoming.slice();
-    let playerScore = s.playerScore;
     let cpuScore = s.cpuScore;
     let recentlyResolved = s.recentlyResolved.slice();
 
@@ -191,82 +167,14 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
           elapsedMs: now - active.startedAt,
         });
         cpuScore += r.solverPoints;
-        playerScore += r.senderPoints;
         recentlyResolved = [active, ...recentlyResolved].slice(0, 8);
       }
     }
 
-    // 3) CPU may send a puzzle. Force-spend at storage cap, probabilistic otherwise.
-    const cpuTokens = computeTokenCount({
-      matchStartMs: s.startedAt,
-      nowMs: now,
-      tokensSpent: s.cpuTokensSpent,
-    });
-    let playerIncoming = s.playerIncoming.slice();
-    let cpuTokensSpent = s.cpuTokensSpent;
-    const forceSpend = cpuTokens >= MAX_STORED_TOKENS;
-    const probSpend = cpuTokens > 0 && Math.random() < profile.tokenSpendChance / 4;
-    if (forceSpend || probSpend) {
-      const [w] = sampleWords(1);
-      if (w) {
-        const puzzle: CpuPuzzle = {
-          id: PUZZLE_ID_FACTORY(),
-          fromPlayerId: s.cpuId,
-          toPlayerId: s.playerId,
-          answer: w,
-          guesses: [],
-          status: "active",
-          startedAt: now,
-        };
-        playerIncoming = [...playerIncoming, puzzle];
-        cpuTokensSpent += 1;
-      }
-    }
-
     set({
-      playerIncoming,
       cpuIncoming,
-      playerScore,
       cpuScore,
-      cpuTokensSpent,
       recentlyResolved,
-    });
-  },
-
-  drawCandidates() {
-    const s = get();
-    if (s.phase !== "running" || !s.startedAt) return [];
-    const tokens = computeTokenCount({
-      matchStartMs: s.startedAt,
-      nowMs: Date.now(),
-      tokensSpent: s.playerTokensSpent,
-    });
-    if (tokens <= 0) return [];
-    const words = sampleWords(CANDIDATE_COUNT);
-    const candidates = words.map((w, i) => ({ id: `c${Date.now()}-${i}`, word: w }));
-    set({ candidates });
-    return candidates;
-  },
-
-  sendPuzzle(candidateId) {
-    const s = get();
-    if (!s.candidates || s.phase !== "running") return;
-    const pick = s.candidates.find((c) => c.id === candidateId);
-    if (!pick) return;
-    const now = Date.now();
-    const puzzle: CpuPuzzle = {
-      id: PUZZLE_ID_FACTORY(),
-      fromPlayerId: s.playerId,
-      toPlayerId: s.cpuId,
-      answer: pick.word,
-      guesses: [],
-      status: "active",
-      startedAt: now,
-    };
-    set({
-      cpuIncoming: [...s.cpuIncoming, puzzle],
-      playerTokensSpent: s.playerTokensSpent + 1,
-      candidates: null,
     });
   },
 
@@ -280,7 +188,6 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
     if (active.length === 0) return { solvedPuzzleIds: [] };
 
     let playerScore = s.playerScore;
-    let cpuScore = s.cpuScore;
     let recentlyResolved = s.recentlyResolved.slice();
     const solvedPuzzleIds: PuzzleId[] = [];
 
@@ -295,7 +202,6 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
           elapsedMs: now - puzzle.startedAt,
         });
         playerScore += r.solverPoints;
-        cpuScore += r.senderPoints;
         recentlyResolved = [puzzle, ...recentlyResolved].slice(0, 8);
         solvedPuzzleIds.push(puzzle.id);
       }
@@ -304,7 +210,6 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
     set({
       playerIncoming: [...s.playerIncoming],
       playerScore,
-      cpuScore,
       recentlyResolved,
     });
     return { solvedPuzzleIds };
@@ -313,20 +218,6 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
   toMatchState() {
     const s = get();
     const now = Date.now();
-    const playerTokens = s.startedAt
-      ? computeTokenCount({
-          matchStartMs: s.startedAt,
-          nowMs: now,
-          tokensSpent: s.playerTokensSpent,
-        })
-      : 0;
-    const cpuTokens = s.startedAt
-      ? computeTokenCount({
-          matchStartMs: s.startedAt,
-          nowMs: now,
-          tokensSpent: s.cpuTokensSpent,
-        })
-      : 0;
     return {
       matchId: (s.matchId ?? "m-cpu") as MatchId,
       roomCode: "CPU",
@@ -339,14 +230,14 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
           id: s.playerId,
           name: "You",
           score: s.playerScore,
-          tokens: playerTokens,
+          tokens: 0,
           connected: true,
         },
         {
           id: s.cpuId,
           name: `CPU (${s.difficulty})`,
           score: s.cpuScore,
-          tokens: cpuTokens,
+          tokens: 0,
           connected: true,
           isCpu: true,
         },
@@ -367,6 +258,18 @@ function stripAnswerIfActive(p: CpuPuzzle): Puzzle {
   }
   const { lastCpuThinkAt: _b, ...rest } = p;
   return { ...rest };
+}
+
+function createSharedPuzzles(playerId: PlayerId, words: string[], now: number): CpuPuzzle[] {
+  return words.map((answer) => ({
+    id: PUZZLE_ID_FACTORY(),
+    fromPlayerId: playerId,
+    toPlayerId: playerId,
+    answer,
+    guesses: [],
+    status: "active",
+    startedAt: now,
+  }));
 }
 
 function shouldCpuGuess(
