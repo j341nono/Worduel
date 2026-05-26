@@ -2,9 +2,10 @@
 
 [日本語版はこちら](README_ja.md)
 
-Worduel is a 60-second, 1-on-1 real-time word duel. Players spend tokens to send
-3-letter Wordle-style puzzles to each other, while also solving every active puzzle
-sent by the opponent. One guess is applied to all active puzzle slots at once.
+Worduel is a 60-second, 1-on-1 real-time word duel. At match start, both players
+receive the same set of 3-letter Wordle-style puzzles. One guess is applied to
+every unsolved puzzle slot at once, and the winner is decided by solve count and
+speed.
 
 This repository is an MVP monorepo with a Next.js client, a Fastify + Socket.IO
 match server, shared TypeScript game rules, optional PostgreSQL persistence, and
@@ -26,7 +27,7 @@ apps/
   web/              Next.js client: home, CPU battle, online room
   server/           Fastify + Socket.IO authoritative match server
 packages/
-  game-core/        Pure game rules: feedback, scoring, tokens, validation, CPU helpers
+  game-core/        Pure game rules: feedback, scoring, validation, CPU helpers
   shared/           Shared TypeScript types and socket contracts
   word-dictionary/  3-letter word list and helpers
 ```
@@ -131,11 +132,9 @@ TypeScript packages that the Vercel build consumes.
 ## Game rules
 
 - A match lasts **60 seconds**.
-- Each player earns one question token every **10 seconds**; at most 2 can be stored.
-- Spending one token draws 3 candidate words. The sender chooses one and sends it to
-  the opponent.
-- The receiver has five fixed puzzle slots.
-- One 3-letter guess is applied to every active slot simultaneously, so stacked
+- The server chooses **five shared answer words** when the match starts.
+- Both players receive the same five fixed puzzle slots.
+- One 3-letter guess is applied to every unsolved slot simultaneously, so stacked
   puzzles reveal multiple feedback rows from a single try.
 - Solved and expired puzzles are shown in the final result screen with their actual
   guesses and feedback.
@@ -144,8 +143,19 @@ Scoring:
 
 - Solver: `+10` base, `+5/+3/+1` for solving on guess 1/2/3, plus
   `max(0, 15 - seconds)` speed bonus.
-- Sender: `+1` per second the opponent took, including unresolved active puzzles at
-  match end.
+- Unsolved slots do not score.
+
+## Word dictionary
+
+The dictionary is managed in `packages/word-dictionary/src/words.ts`. It is a
+generated 3-letter lowercase word list, refreshed from a local word source with:
+
+```bash
+pnpm --filter @worduel/word-dictionary run build:words
+```
+
+By default the script reads `/usr/share/dict/words`; pass another source path if
+you want to generate from a larger external list.
 
 ## Socket events
 
@@ -154,7 +164,7 @@ Defined in `packages/shared/src/socket.ts` and implemented in
 
 | Direction | Events |
 | --- | --- |
-| Client -> Server | `create_room`, `join_room`, `leave_room`, `start_match`, `get_question_candidates`, `send_question`, `submit_guess` |
+| Client -> Server | `create_room`, `join_room`, `leave_room`, `start_match`, `submit_guess` |
 | Server -> Client | `match_state_updated`, `match_finished`, `player_disconnected`, `error` |
 
 ## Useful commands

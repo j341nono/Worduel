@@ -2,10 +2,9 @@
 
 [English README](README.md)
 
-Worduel は、60秒で勝敗が決まる 1対1 のリアルタイム単語対戦ゲームです。プレイヤーは
-トークンを使って相手に3文字の Wordle 風パズルを送りつつ、相手から届いた複数の
-パズルを同時に解きます。1回の解答入力は、進行中のすべてのパズルスロットへ同時に
-適用されます。
+Worduel は、60秒で勝敗が決まる 1対1 のリアルタイム単語対戦ゲームです。試合開始時に
+両プレイヤーへ同じ3文字の Wordle 風パズルセットが配られます。1回の解答入力は、
+未解決のすべてのパズルスロットへ同時に適用され、正解数と解答速度で勝敗が決まります。
 
 このリポジトリは MVP の monorepo です。Next.js クライアント、Fastify + Socket.IO
 対戦サーバー、共有 TypeScript ゲームルール、任意の PostgreSQL 永続化、ルールエンジン
@@ -27,7 +26,7 @@ apps/
   web/              Next.js クライアント: ホーム、CPU対戦、オンラインルーム
   server/           Fastify + Socket.IO の権威サーバー
 packages/
-  game-core/        feedback、scoring、tokens、validation、CPU helper などの純粋なゲームルール
+  game-core/        feedback、scoring、validation、CPU helper などの純粋なゲームルール
   shared/           共有 TypeScript 型と Socket.IO contract
   word-dictionary/  3文字単語リストと helper
 ```
@@ -132,17 +131,28 @@ CORS_ORIGIN=https://<your-vercel-app>.vercel.app
 ## ゲームルール
 
 - 1試合は **60秒** です。
-- 各プレイヤーは **10秒ごと** に出題トークンを1つ獲得します。最大2つまで保持できます。
-- トークンを1つ使うと、3つの候補単語を引けます。その中から1つ選んで相手に送ります。
-- 回答側には5つの固定パズルスロットがあります。
-- 1回の3文字入力は、進行中のすべてのスロットに同時に適用されます。
+- サーバーが試合開始時に **5つの共通答え単語** を決めます。
+- 両プレイヤーには同じ5つの固定パズルスロットが配られます。
+- 1回の3文字入力は、未解決のすべてのスロットに同時に適用されます。
 - 終了後のリザルト画面では、解いた/時間切れになったパズルと実際の試行結果を確認できます。
 
 スコア:
 
 - 回答側: 基本 `+10`、1/2/3回目正解で `+5/+3/+1`、さらに
   `max(0, 15 - 秒数)` の速度ボーナス。
-- 出題側: 相手が解くまでにかかった秒数ごとに `+1`。試合終了時に未解決のパズルも対象です。
+- 未解決のスロットには得点が入りません。
+
+## 単語辞書
+
+辞書は `packages/word-dictionary/src/words.ts` で管理しています。3文字の小文字英単語を
+生成したリストで、次のコマンドで更新できます。
+
+```bash
+pnpm --filter @worduel/word-dictionary run build:words
+```
+
+デフォルトでは `/usr/share/dict/words` を読み込みます。より大きい外部辞書を使いたい場合は、
+生成スクリプトに別の source path を渡せます。
 
 ## Socket.IO events
 
@@ -150,7 +160,7 @@ CORS_ORIGIN=https://<your-vercel-app>.vercel.app
 
 | Direction | Events |
 | --- | --- |
-| Client -> Server | `create_room`, `join_room`, `leave_room`, `start_match`, `get_question_candidates`, `send_question`, `submit_guess` |
+| Client -> Server | `create_room`, `join_room`, `leave_room`, `start_match`, `submit_guess` |
 | Server -> Client | `match_state_updated`, `match_finished`, `player_disconnected`, `error` |
 
 ## よく使うコマンド
