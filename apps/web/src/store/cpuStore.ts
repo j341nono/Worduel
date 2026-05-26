@@ -243,16 +243,18 @@ export const useCpuStore = create<CpuStore>((set, get) => ({
         },
       ],
       incoming: {
-        [s.playerId]: s.playerIncoming.map(stripAnswerIfActive),
-        [s.cpuId]: s.cpuIncoming.map(stripAnswerIfActive),
+        [s.playerId]: s.playerIncoming.map((p) => toClientPuzzle(p, s.phase === "finished")),
+        [s.cpuId]: s.cpuIncoming.map((p) => toClientPuzzle(p, s.phase === "finished")),
       } as Record<PlayerId, Puzzle[]>,
-      recentlyResolved: s.recentlyResolved.map((p) => ({ ...p })),
+      recentlyResolved: s.recentlyResolved.map((p) =>
+        toClientPuzzle(p, s.phase === "finished"),
+      ),
     };
   },
 }));
 
-function stripAnswerIfActive(p: CpuPuzzle): Puzzle {
-  if (p.status === "active") {
+function toClientPuzzle(p: CpuPuzzle, revealAnswer: boolean): Puzzle {
+  if (!revealAnswer) {
     const { answer: _a, lastCpuThinkAt: _b, ...rest } = p;
     return rest;
   }

@@ -4,6 +4,7 @@ import {
   addPlayer,
   createRoom,
   finalizeMatch,
+  snapshot,
   startMatch,
   submitGuess,
 } from "./state.js";
@@ -84,5 +85,28 @@ describe("room state", () => {
     expect(room.players[0]!.score).toBe(0);
     expect(room.players[1]!.score).toBe(0);
     expect(summary.winnerPlayerId).toBeNull();
+  });
+
+  it("hides answers from client snapshots until the match is finished", () => {
+    const room = createRoom(p("a", "Alice"), "ROOM05");
+    addPlayer(room, p("b", "Bob"));
+    const start = 1_000_000;
+    startMatch(room, start);
+
+    const puzzle = room.incoming.get("b" as PlayerId)![0]!;
+    puzzle.answer = "cat";
+    submitGuess(room, {
+      solverId: "b" as PlayerId,
+      guess: "cat",
+      now: start + 1_000,
+    });
+
+    const running = snapshot(room, start + 1_000);
+    expect(running.incoming["b" as PlayerId]![0]!.answer).toBeUndefined();
+    expect(running.recentlyResolved[0]!.answer).toBeUndefined();
+
+    finalizeMatch(room, start + 60_000);
+    const finished = snapshot(room, start + 60_000);
+    expect(finished.incoming["b" as PlayerId]![0]!.answer).toBe("cat");
   });
 });

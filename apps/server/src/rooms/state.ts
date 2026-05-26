@@ -86,8 +86,11 @@ export function snapshot(room: ServerRoom, now: number): MatchState {
   }
 
   const incomingObj: Record<PlayerId, Puzzle[]> = {} as Record<PlayerId, Puzzle[]>;
+  const revealAnswers = room.phase === "finished";
   for (const p of room.players) {
-    incomingObj[p.id] = (room.incoming.get(p.id) ?? []).map(toClientPuzzle);
+    incomingObj[p.id] = (room.incoming.get(p.id) ?? []).map((puzzle) =>
+      toClientPuzzle(puzzle, revealAnswers),
+    );
   }
 
   return {
@@ -99,12 +102,14 @@ export function snapshot(room: ServerRoom, now: number): MatchState {
     serverNow: now,
     players: room.players.map((p) => ({ ...p })),
     incoming: incomingObj,
-    recentlyResolved: room.recentlyResolved.map(toClientPuzzle),
+    recentlyResolved: room.recentlyResolved.map((puzzle) =>
+      toClientPuzzle(puzzle, revealAnswers),
+    ),
   };
 }
 
-function toClientPuzzle(p: ServerPuzzle): Puzzle {
-  if (p.status === "active") {
+function toClientPuzzle(p: ServerPuzzle, revealAnswer: boolean): Puzzle {
+  if (!revealAnswer) {
     const { answer: _omit, ...rest } = p;
     return rest;
   }
