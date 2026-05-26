@@ -4,8 +4,6 @@ import {
   addPlayer,
   createRoom,
   finalizeMatch,
-  sendQuestion,
-  snapshot,
   startMatch,
   submitGuess,
 } from "./state.js";
@@ -20,11 +18,10 @@ describe("room state", () => {
     addPlayer(room, p("b", "Bob"));
     const start = 1_000_000;
     startMatch(room, start);
-    snapshot(room, start + 15_000); // Alice has 2 tokens at t=15
 
-    // Alice sends two puzzles to Bob: "cat" and "dog".
-    sendQuestion(room, { senderId: "a" as PlayerId, answer: "cat", now: start + 15_000 });
-    sendQuestion(room, { senderId: "a" as PlayerId, answer: "dog", now: start + 15_500 });
+    const queue = room.incoming.get("b" as PlayerId)!;
+    queue[0]!.answer = "cat";
+    queue[1]!.answer = "dog";
 
     // Bob guesses "cat" — solves the first puzzle, second still active.
     const r1 = submitGuess(room, {
@@ -32,10 +29,9 @@ describe("room state", () => {
       guess: "cat",
       now: start + 16_000,
     });
-    expect(r1.appliedTo.length).toBe(2);
+    expect(r1.appliedTo.length).toBe(queue.length);
     expect(r1.solvedPuzzleIds.length).toBe(1);
 
-    const queue = room.incoming.get("b" as PlayerId)!;
     expect(queue.find((p) => p.answer === "cat")!.status).toBe("solved");
     expect(queue.find((p) => p.answer === "dog")!.status).toBe("active");
     // Both puzzles now have 1 guess recorded.
@@ -47,26 +43,46 @@ describe("room state", () => {
     addPlayer(room, p("b", "Bob"));
     const start = 1_000_000;
     startMatch(room, start);
-    snapshot(room, start + 5_000);
-    sendQuestion(room, { senderId: "a" as PlayerId, answer: "cat", now: start + 5_000 });
+    const puzzle = room.incoming.get("b" as PlayerId)![0]!;
+    puzzle.answer = "cat";
 
     for (const w of ["dog", "bat", "rat", "ham", "yak"]) {
       submitGuess(room, { solverId: "b" as PlayerId, guess: w, now: start + 6_000 });
     }
-    const puzzle = room.incoming.get("b" as PlayerId)!.find((p) => p.answer === "cat")!;
     expect(puzzle.status).toBe("active");
     expect(puzzle.guesses.length).toBe(5);
   });
 
-  it("expires remaining active puzzles at match end with time bonus only", () => {
+  it("creates the same answer set for both players and resets state on rematch", () => {
     const room = createRoom(p("a", "Alice"), "ROOM03");
     addPlayer(room, p("b", "Bob"));
     const start = 1_000_000;
     startMatch(room, start);
-    snapshot(room, start + 5_000);
-    sendQuestion(room, { senderId: "a" as PlayerId, answer: "cat", now: start + 5_000 });
+
+    const firstMatchId = room.matchId;
+    const aliceAnswers = room.incoming.get("a" as PlayerId)!.map((p) => p.answer);
+    const bobAnswers = room.incoming.get("b" as PlayerId)!.map((p) => p.answer);
+    expect(aliceAnswers).toEqual(bobAnswers);
+
+    room.players[0]!.score = 99;
+    room.recentlyResolved.push(room.incoming.get("a" as PlayerId)![0]!);
+    finalizeMatch(room, start + 60_000);
+    startMatch(room, start + 70_000);
+
+    expect(room.matchId).not.toBe(firstMatchId);
+    expect(room.players.map((p) => p.score)).toEqual([0, 0]);
+    expect(room.recentlyResolved).toEqual([]);
+    expect(room.incoming.get("a" as PlayerId)!.every((p) => p.status === "active")).toBe(true);
+  });
+
+  it("expires remaining active puzzles at match end without sender bonus", () => {
+    const room = createRoom(p("a", "Alice"), "ROOM04");
+    addPlayer(room, p("b", "Bob"));
+    const start = 1_000_000;
+    startMatch(room, start);
     const summary = finalizeMatch(room, start + 60_000);
-    expect(room.players[0]!.score).toBe(55); // sender time bonus 55s
-    expect(summary.winnerPlayerId).toBe("a");
+    expect(room.players[0]!.score).toBe(0);
+    expect(room.players[1]!.score).toBe(0);
+    expect(summary.winnerPlayerId).toBeNull();
   });
 });

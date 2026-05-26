@@ -1,4 +1,4 @@
-import { CANDIDATE_COUNT, MATCH_DURATION_SEC } from "@worduel/shared";
+import { MATCH_DURATION_SEC, MAX_PUZZLE_SLOTS } from "@worduel/shared";
 import type {
   MatchId,
   MatchPhase,
@@ -8,13 +8,10 @@ import type {
   PlayerState,
   Puzzle,
   PuzzleId,
-  QuestionCandidate,
 } from "@worduel/shared";
 import {
   computeFeedback,
-  computeTokenCount,
   isAllCorrect,
-  scoreMatchEndExpire,
   scoreSolve,
 } from "@worduel/game-core";
 import { sampleWords } from "@worduel/word-dictionary";
@@ -31,7 +28,6 @@ export interface ServerRoom {
   // place (locked) — they are not removed, so the UI can render fixed slot positions.
   incoming: Map<PlayerId, ServerPuzzle[]>;
   recentlyResolved: ServerPuzzle[];
-  candidates: Map<PlayerId, QuestionCandidate[]>;
   tokensSpent: Map<PlayerId, number>;
   socketByPlayer: Map<PlayerId, string>;
   finalSummary?: MatchResultSummary;
@@ -52,7 +48,6 @@ export function createRoom(initialPlayer: ServerPlayer, roomCode: string): Serve
     players: [initialPlayer],
     incoming: new Map([[initialPlayer.id, []]]),
     recentlyResolved: [],
-    candidates: new Map(),
     tokensSpent: new Map([[initialPlayer.id, 0]]),
     socketByPlayer: new Map(),
   };
@@ -67,20 +62,27 @@ export function addPlayer(room: ServerRoom, player: ServerPlayer): void {
 
 export function startMatch(room: ServerRoom, now: number): void {
   if (room.players.length !== 2) throw new Error("Need 2 players to start");
+  if (room.phase === "running") throw new Error("Match already running");
+  const words = sampleWords(MAX_PUZZLE_SLOTS);
+
+  room.matchId = nanoid() as MatchId;
   room.phase = "running";
   room.startedAt = now;
   room.endsAt = now + MATCH_DURATION_SEC * 1000;
+  room.finalSummary = undefined;
+  room.recentlyResolved = [];
+
+  for (const player of room.players) {
+    player.score = 0;
+    player.tokens = 0;
+    room.tokensSpent.set(player.id, 0);
+    room.incoming.set(player.id, createSharedPuzzles(player.id, words, now));
+  }
 }
 
 export function snapshot(room: ServerRoom, now: number): MatchState {
   for (const p of room.players) {
-    if (room.phase === "running" && room.startedAt) {
-      p.tokens = computeTokenCount({
-        matchStartMs: room.startedAt,
-        nowMs: now,
-        tokensSpent: room.tokensSpent.get(p.id) ?? 0,
-      });
-    }
+    p.tokens = 0;
   }
 
   const incomingObj: Record<PlayerId, Puzzle[]> = {} as Record<PlayerId, Puzzle[]>;
@@ -107,46 +109,6 @@ function toClientPuzzle(p: ServerPuzzle): Puzzle {
     return rest;
   }
   return { ...p };
-}
-
-export function generateCandidates(): QuestionCandidate[] {
-  const words = sampleWords(CANDIDATE_COUNT);
-  return words.map((w) => ({ id: nanoid(8), word: w }));
-}
-
-export interface SendQuestionInput {
-  senderId: PlayerId;
-  answer: string;
-  now: number;
-}
-
-export function sendQuestion(room: ServerRoom, input: SendQuestionInput): ServerPuzzle {
-  if (room.phase !== "running") throw new Error("Match is not running");
-  const sender = room.players.find((p) => p.id === input.senderId);
-  if (!sender) throw new Error("Sender not in room");
-  const opponent = room.players.find((p) => p.id !== input.senderId);
-  if (!opponent) throw new Error("Opponent missing");
-
-  if (sender.tokens <= 0) throw new Error("No question tokens available");
-
-  room.tokensSpent.set(input.senderId, (room.tokensSpent.get(input.senderId) ?? 0) + 1);
-  sender.tokens = Math.max(0, sender.tokens - 1);
-
-  const puzzle: ServerPuzzle = {
-    id: nanoid(10) as PuzzleId,
-    fromPlayerId: input.senderId,
-    toPlayerId: opponent.id,
-    answer: input.answer,
-    guesses: [],
-    status: "active",
-    startedAt: input.now,
-  };
-
-  const queue = room.incoming.get(opponent.id) ?? [];
-  queue.push(puzzle);
-  room.incoming.set(opponent.id, queue);
-
-  return puzzle;
 }
 
 export interface SubmitGuessInput {
@@ -189,7 +151,6 @@ export function submitGuess(room: ServerRoom, input: SubmitGuessInput): SubmitGu
       const elapsedMs = input.now - puzzle.startedAt;
       const r = scoreSolve({ guessNumber, elapsedMs });
       awardPoints(room, puzzle.toPlayerId, r.solverPoints);
-      awardPoints(room, puzzle.fromPlayerId, r.senderPoints);
       room.recentlyResolved.unshift(puzzle);
       if (room.recentlyResolved.length > 8) room.recentlyResolved.length = 8;
       solvedPuzzleIds.push(puzzle.id);
@@ -212,9 +173,6 @@ export function finalizeMatch(room: ServerRoom, now: number): MatchResultSummary
       if (p.status !== "active") continue;
       p.status = "expired";
       p.resolvedAt = now;
-      const elapsedMs = now - p.startedAt;
-      const { senderPoints } = scoreMatchEndExpire({ elapsedMs });
-      awardPoints(room, p.fromPlayerId, senderPoints);
       room.recentlyResolved.unshift(p);
     }
   }
@@ -239,4 +197,16 @@ export function finalizeMatch(room: ServerRoom, now: number): MatchResultSummary
   };
   room.finalSummary = summary;
   return summary;
+}
+
+function createSharedPuzzles(playerId: PlayerId, words: string[], now: number): ServerPuzzle[] {
+  return words.map((answer) => ({
+    id: nanoid(10) as PuzzleId,
+    fromPlayerId: playerId,
+    toPlayerId: playerId,
+    answer,
+    guesses: [],
+    status: "active",
+    startedAt: now,
+  }));
 }

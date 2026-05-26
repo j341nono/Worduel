@@ -8,8 +8,6 @@ import {
   addPlayer,
   createRoom,
   finalizeMatch,
-  generateCandidates,
-  sendQuestion,
   snapshot,
   startMatch,
   submitGuess,
@@ -70,8 +68,6 @@ async function endMatch(io: IO, roomCode: string): Promise<void> {
     tickHandles.delete(roomCode);
   }
   await persistMatchResult(summary);
-  // Leave the room around briefly so clients can read final state, then drop.
-  setTimeout(() => deleteRoom(roomCode), 30_000);
 }
 
 export function registerSocketHandlers(io: IO): void {
@@ -164,12 +160,8 @@ export function registerSocketHandlers(io: IO): void {
     // ---------- get_question_candidates ----------
     socket.on("get_question_candidates", (cb) => {
       try {
-        const room = currentRoom(socket);
-        const playerId = socket.data.playerId as PlayerId;
-        if (!playerId) throw new Error("No player binding");
-        const candidates = generateCandidates();
-        room.candidates.set(playerId, candidates);
-        cb({ ok: true, data: { candidates } });
+        currentRoom(socket);
+        throw new Error("Manual question sending is disabled for shared-word matches");
       } catch (err) {
         cb({ ok: false, error: (err as Error).message });
       }
@@ -178,20 +170,9 @@ export function registerSocketHandlers(io: IO): void {
     // ---------- send_question ----------
     socket.on("send_question", ({ candidateId }, cb) => {
       try {
-        const room = currentRoom(socket);
-        const playerId = socket.data.playerId as PlayerId;
-        const pool = room.candidates.get(playerId) ?? [];
-        const candidate = pool.find((c) => c.id === candidateId);
-        if (!candidate) throw new Error("Invalid candidate");
-        const puzzle = sendQuestion(room, {
-          senderId: playerId,
-          answer: candidate.word,
-          now: Date.now(),
-        });
-        // Clear the candidate pool after a successful send.
-        room.candidates.delete(playerId);
-        cb({ ok: true, data: { puzzleId: puzzle.id } });
-        broadcast(io, room.roomCode);
+        currentRoom(socket);
+        void candidateId;
+        throw new Error("Manual question sending is disabled for shared-word matches");
       } catch (err) {
         cb({ ok: false, error: (err as Error).message });
       }
