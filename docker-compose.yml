@@ -4,15 +4,15 @@ services:
     container_name: worduel-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: worduel
-      POSTGRES_PASSWORD: worduel
-      POSTGRES_DB: worduel
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - worduel_pg:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U worduel -d worduel"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 5
